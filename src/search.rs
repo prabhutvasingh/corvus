@@ -360,13 +360,22 @@ let mut best: Option<Move> = None;
             self.iter_reset();
 
             let (mv, sc) = if depth >= 5 && prev > -900 && prev < 900 {
-                let delta = 50;
-                let (m1, s1) = self.search_root(depth as i32, prev - delta, prev + delta);
-                if self.stopped || (s1 > prev - delta && s1 < prev + delta) {
-                    (m1, s1)
-                } else {
-                    self.search_root(depth as i32, -INF, INF)
+                let mut delta = 26i32;
+                let mut out: Option<(Move, i32)> = None;
+                while out.is_none() {
+                    let alpha = prev - delta;
+                    let beta = prev + delta;
+                    let (mm, ss) = self.search_root(depth as i32, alpha, beta);
+                    if self.stopped || (ss > alpha && ss < beta) {
+                        out = Some((mm, ss));
+                    } else {
+                        delta += delta / 2 + 1;
+                        if delta > 300 {
+                            out = Some(self.search_root(depth as i32, -INF, INF));
+                        }
+                    }
                 }
+                out.unwrap()
             } else {
                 self.search_root(depth as i32, -INF, INF)
             };
