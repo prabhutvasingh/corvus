@@ -274,6 +274,25 @@ pub fn evaluate(b: &Board) -> i32 {
             side += BISHOP_PAIR;
         }
 
+        let mut nb = b.pieces[c][KNIGHT];
+        while nb != 0 {
+            let sq = nb.trailing_zeros() as usize;
+            nb &= nb - 1;
+            let r = rank_of(sq) as i32;
+            let outpost_rank = if c == WHITE { (3..=5).contains(&r) } else { (2..=4).contains(&r) };
+            if outpost_rank {
+                let defended = PAWN_ATTACKS[c ^ 1][sq] & b.pieces[c][PAWN] != 0;
+                let chased = PAWN_ATTACKS[c][sq] & b.pieces[c ^ 1][PAWN] != 0;
+                if defended && !chased {
+                    side += if (c == WHITE && r == 5) || (c == BLACK && r == 4) {
+                        24
+                    } else {
+                        14
+                    };
+                }
+            }
+        }
+
         let home_minors = if c == WHITE {
             bit(1) | bit(6) | bit(2) | bit(5)
         } else {
@@ -330,6 +349,20 @@ pub fn evaluate(b: &Board) -> i32 {
             let opp_p = b.pieces[c ^ 1][PAWN] & FILE_MASK[f];
             if own_p == 0 {
                 side += if opp_p == 0 { ROOK_OPEN } else { ROOK_SEMI_OPEN };
+            }
+            let on_7th = if c == WHITE {
+                rank_of(sq) == 6
+            } else {
+                rank_of(sq) == 1
+            };
+            if on_7th {
+                let enemy_zone = if c == WHITE {
+                    RANK_MASK[6] | RANK_MASK[7]
+                } else {
+                    RANK_MASK[0] | RANK_MASK[1]
+                };
+                let checks = (b.pieces[c ^ 1][PAWN] | bit(b.kingsq[c ^ 1])) & enemy_zone;
+                side += if checks != 0 { 30 } else { 18 };
             }
         }
 
