@@ -75,7 +75,7 @@ const PST: [[i32; 64]; 6] = [
     PST_PAWN, PST_KNIGHT, PST_BISHOP, PST_ROOK, PST_QUEEN, PST_KING,
 ];
 
-const MOB_WEIGHT: [i32; 6] = [0, 3, 3, 2, 1, 0];
+const MOB_WEIGHT: [i32; 6] = [0, 4, 4, 3, 2, 0];
 const BISHOP_PAIR: i32 = 32;
 const DOUBLED_PAWN: i32 = 10;
 const ISOLATED_PAWN: i32 = 14;
@@ -84,6 +84,9 @@ const KING_EXPOSED: i32 = 45;
 const ROOK_SEMI_OPEN: i32 = 10;
 const ROOK_OPEN: i32 = 20;
 const DEVELOPED_MINOR: i32 = 10;
+const KING_ATK_COV: i32 = 3;
+const KING_ATK_TWO: i32 = 18;
+const KING_ATK_THREE: i32 = 30;
 
 fn ahead_mask(color: usize, rank: usize, file: usize) -> u64 {
     let fm = FILE_MASK[file];
@@ -104,6 +107,8 @@ pub fn evaluate(b: &Board) -> i32 {
         let mut side = 0i32;
         let own = b.occ[c];
         let mirror = c == BLACK;
+        let ering = KING_ATTACKS[b.kingsq[c ^ 1]] | bit(b.kingsq[c ^ 1]);
+        let mut attackers = 0;
 
         for pc in 0..5 {
             let mut bb = b.pieces[c][pc];
@@ -120,8 +125,19 @@ pub fn evaluate(b: &Board) -> i32 {
                         _ => queen_attacks(b.all, sq),
                     };
                     side += MOB_WEIGHT[pc] * (attacks & !own).count_ones() as i32;
+                    let on_ring = attacks & ering;
+                    side += KING_ATK_COV * on_ring.count_ones() as i32;
+                    if on_ring != 0 {
+                        attackers += 1;
+                    }
                 }
             }
+        }
+
+        if attackers >= 3 {
+            side += KING_ATK_THREE;
+        } else if attackers >= 2 {
+            side += KING_ATK_TWO;
         }
 
         if b.pieces[c][BISHOP].count_ones() >= 2 {
