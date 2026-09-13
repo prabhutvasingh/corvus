@@ -1,30 +1,47 @@
 <div align="center">
 
-<img src="assets/corvus.jpg" alt="Corvus" width="200" style="border-radius: 16px">
-
-```text
-   ╭─────────────╮ ╭─────────────╮ ╭─────────────╮
-   │ search.rs  │ │ eval.rs   │ │ uci.rs    │
-   ╰─────────────╯ ╰─────────────╯ ╰─────────────╯
-   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-   ╭──────────────────────────────────────────╮
-   │CORVUS · UCI CHESS ENGINE · RUST          │
-   ╰──────────────────────────────────────────╯
-   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
-```
+<img src="assets/corvus.jpg" alt="Corvus" width="20" height="20" style="border-radius: 4px">
 
 # Corvus
 
-### A from-scratch chess engine written in Rust
+A free and strong UCI chess engine.
 
-`corvus` is a UCI chess engine built entirely from scratch — no ChessBase, no Stockfish
-code, no `lichess-bot` wrappers. Just bitboards, negamax, and a strong desire to win.
+  <br>
+  <strong>[Explore Corvus docs »][wiki-link]</strong>
+  <br>
+  <br>
+  [Report bug][issue-link]
+  ·
+  [Open a discussion][discussions-link]
+  ·
+  [Changelog][releases-link]
 
-<br>
-
-**UCI · Pure Rust · Zero dependencies · ~11M nodes/sec**
+  [![License][license-badge]][license-link]
+  [![Release][release-badge]][releases-link]
+  <br>
+  [![Commits][commits-badge]][commits-link]
+  [![Stars][stars-badge]][stars-link]
+  <br>
+  [![Rust][rust-badge]][rust-link]
+  [![UCI][uci-badge]][uci-link]
 
 </div>
+
+[wiki-link]: https://github.com/prabhutvasingh/corvus/wiki
+[issue-link]: https://github.com/prabhutvasingh/corvus/issues
+[discussions-link]: https://github.com/prabhutvasingh/corvus/discussions
+[releases-link]: https://github.com/prabhutvasingh/corvus/releases
+[license-badge]: https://img.shields.io/github/license/prabhutvasingh/corvus
+[license-link]: https://github.com/prabhutvasingh/corvus/blob/main/LICENSE
+[release-badge]: https://img.shields.io/github/v/release/prabhutvasingh/corvus
+[commits-badge]: https://img.shields.io/github/commit-activity/m/prabhutvasingh/corvus
+[commits-link]: https://github.com/prabhutvasingh/corvus/commits/main
+[stars-badge]: https://img.shields.io/github/stars/prabhutvasingh/corvus
+[stars-link]: https://github.com/prabhutvasingh/corvus
+[rust-badge]: https://img.shields.io/badge/Rust-1.85-orange
+[rust-link]: https://www.rust-lang.org/
+[uci-badge]: https://img.shields.io/badge/UCI-compliant-blue
+[uci-link]: https://backscattering.de/chess/uci/
 
 ---
 
