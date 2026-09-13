@@ -79,6 +79,11 @@ const MOB_WEIGHT: [i32; 6] = [0, 3, 3, 2, 1, 0];
 const BISHOP_PAIR: i32 = 32;
 const DOUBLED_PAWN: i32 = 10;
 const ISOLATED_PAWN: i32 = 14;
+const KING_SHIELD: i32 = 12;
+const KING_EXPOSED: i32 = 45;
+const ROOK_SEMI_OPEN: i32 = 10;
+const ROOK_OPEN: i32 = 20;
+const DEVELOPED_MINOR: i32 = 10;
 
 fn ahead_mask(color: usize, rank: usize, file: usize) -> u64 {
     let fm = FILE_MASK[file];
@@ -123,6 +128,13 @@ pub fn evaluate(b: &Board) -> i32 {
             side += BISHOP_PAIR;
         }
 
+        let home_minors = if c == WHITE {
+            bit(1) | bit(6) | bit(2) | bit(5)
+        } else {
+            bit(57) | bit(62) | bit(58) | bit(61)
+        };
+        side += DEVELOPED_MINOR * ((b.pieces[c][KNIGHT] | b.pieces[c][BISHOP]) & !home_minors).count_ones() as i32;
+
         let pawns = b.pieces[c][PAWN];
         let mut bb = pawns;
         while bb != 0 {
@@ -146,7 +158,37 @@ pub fn evaluate(b: &Board) -> i32 {
             }
         }
 
+        let mut rooks = b.pieces[c][ROOK];
+        while rooks != 0 {
+            let sq = rooks.trailing_zeros() as usize;
+            rooks &= rooks - 1;
+            let f = file_of(sq);
+            let own_p = pawns & FILE_MASK[f];
+            let opp_p = b.pieces[c ^ 1][PAWN] & FILE_MASK[f];
+            if own_p == 0 {
+                side += if opp_p == 0 { ROOK_OPEN } else { ROOK_SEMI_OPEN };
+            }
+        }
+
         let ks = b.kingsq[c];
+        let (kf, kr) = (file_of(ks), rank_of(ks));
+        let sr = if c == WHITE { kr + 1 } else { kr.saturating_sub(1) };
+        if sr < 8 {
+            for df in -1i32..=1i32 {
+                let sf = kf as i32 + df;
+                if (0..8).contains(&sf) && pawns & bit(sr * 8 + sf as usize) != 0 {
+                    side += KING_SHIELD;
+                }
+            }
+        }
+        let queens = b.pieces[0][QUEEN] | b.pieces[1][QUEEN];
+        let rooks_all = b.pieces[0][ROOK] | b.pieces[1][ROOK];
+        let midgame = queens.count_ones() > 0 || rooks_all.count_ones() >= 3;
+        let home_rank = if c == WHITE { 0 } else { 7 };
+        if midgame && kr as i32 != home_rank {
+            side -= KING_EXPOSED;
+        }
+
         let mapped = if mirror { ks ^ 56 } else { ks };
         score += if c == WHITE { side + PST_KING[mapped] } else { -(side + PST_KING[mapped]) };
     }
