@@ -322,6 +322,10 @@ pub fn evaluate(b: &Board) -> i32 {
                 let progress = if c == WHITE { r as i32 } else { 7 - r as i32 };
                 side += 14 + 12 * progress;
                 side += (EG_PASSED + 8 * progress) * p / 24;
+                let adj = FILE_MASK[f.saturating_sub(1)] | FILE_MASK[(f + 1).min(7)];
+                if pawns & adj != 0 {
+                    side += (15 + 12 * progress.min(3)) * p / 24;
+                }
                 if b.pieces[c][ROOK] & FILE_MASK[f] != 0 {
                     let mut behind = false;
                     let mut rr = b.pieces[c][ROOK] & FILE_MASK[f];
