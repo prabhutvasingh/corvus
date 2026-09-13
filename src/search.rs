@@ -538,7 +538,11 @@ impl Searcher {
             if searched == 0 {
                 v = -self.negamax(d - 1, -beta, -alpha, ply + 1, true);
             } else {
-                let reduction = if quiet && !in_check && d >= 3 && searched >= 4 { 1 } else { 0 };
+                let mut reduction = 0i32;
+                if quiet && !in_check && d >= 4 && searched >= 4 {
+                    reduction = 1 + (searched as i32 / 6).min(3);
+                    reduction = reduction.min(d - 1);
+                }
                 v = -self.negamax(d - 1 - reduction, -alpha - 1, -alpha, ply + 1, true);
                 if v > alpha && v < beta {
                     v = -self.negamax(d - 1, -beta, -alpha, ply + 1, true);
