@@ -71,9 +71,23 @@ const PST_KING: [i32; 64] = [
     -30, -40, -40, -50, -50, -40, -40, -30,
 ];
 
+const PST_KING_EG: [i32; 64] = [
+    -30, -20, -10, -10, -10, -10, -20, -30,
+    -20, -10, 0, 0, 0, 0, -10, -20,
+    -10, 0, 10, 15, 15, 10, 0, -10,
+    -10, 5, 15, 20, 20, 15, 5, -10,
+    -10, 0, 15, 20, 20, 15, 0, -10,
+    -10, 5, 10, 15, 15, 10, 5, -10,
+    -20, -10, 0, 5, 5, 0, -10, -20,
+    -30, -20, -10, -10, -10, -10, -20, -30,
+];
+
 const PST: [[i32; 64]; 6] = [
     PST_PAWN, PST_KNIGHT, PST_BISHOP, PST_ROOK, PST_QUEEN, PST_KING,
 ];
+
+const EG_PASSED: i32 = 28;
+const KING_PROX: i32 = 10;
 
 const MOB_WEIGHT: [i32; 6] = [0, 4, 4, 3, 2, 0];
 const BISHOP_PAIR: i32 = 32;
@@ -102,6 +116,10 @@ fn ahead_mask(color: usize, rank: usize, file: usize) -> u64 {
 
 pub fn evaluate(b: &Board) -> i32 {
     let mut score = 0i32;
+
+    let queens = b.pieces[0][QUEEN] | b.pieces[1][QUEEN];
+    let rooks_all = b.pieces[0][ROOK] | b.pieces[1][ROOK];
+    let eg_active = queens == 0 && rooks_all.count_ones() <= 1;
 
     for c in 0..2 {
         let mut side = 0i32;
@@ -171,6 +189,9 @@ pub fn evaluate(b: &Board) -> i32 {
             if b.pieces[c ^ 1][PAWN] & ahead_mask(c, r, f) == 0 {
                 let progress = if c == WHITE { r as i32 } else { 7 - r as i32 };
                 side += 14 + 12 * progress;
+                if eg_active {
+                    side += EG_PASSED + 8 * progress;
+                }
             }
         }
 
@@ -206,7 +227,14 @@ pub fn evaluate(b: &Board) -> i32 {
         }
 
         let mapped = if mirror { ks ^ 56 } else { ks };
-        score += if c == WHITE { side + PST_KING[mapped] } else { -(side + PST_KING[mapped]) };
+        let king_pst = if eg_active { PST_KING_EG[mapped] } else { PST_KING[mapped] };
+        score += if c == WHITE { side + king_pst } else { -(side + king_pst) };
+    }
+
+    if eg_active {
+        let cd = ((file_of(b.kingsq[0]) as i32 - file_of(b.kingsq[1]) as i32).abs())
+            .max((rank_of(b.kingsq[0]) as i32 - rank_of(b.kingsq[1]) as i32).abs());
+        score += (7 - cd) * KING_PROX;
     }
 
     if b.side == WHITE {
