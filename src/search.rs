@@ -576,9 +576,18 @@ let mut best: Option<Move> = None;
                         2 => 130,
                         _ => 180,
                     };
-                    if st + margin <= alpha {
+                    if st + margin <= alpha && !self.gives_check(m) {
                         continue;
                     }
+                }
+            }
+            let mut reduction = 0i32;
+            if quiet && !in_check && d >= 4 && searched >= 4 {
+                reduction = (1 + (searched as i32 / 4).min(4)).min(4);
+                if self.gives_check(m) {
+                    reduction = 0;
+                } else {
+                    reduction = reduction.min(d - 1);
                 }
             }
             let mut v;
@@ -586,11 +595,6 @@ let mut best: Option<Move> = None;
             if searched == 0 {
                 v = -self.negamax(d - 1, -beta, -alpha, ply + 1, true);
             } else {
-                let mut reduction = 0i32;
-                if quiet && !in_check && d >= 4 && searched >= 4 {
-                    reduction = (1 + (searched as i32 / 4).min(4)).min(4);
-                    reduction = reduction.min(d - 1);
-                }
                 v = -self.negamax(d - 1 - reduction, -alpha - 1, -alpha, ply + 1, true);
                 if v > alpha && v < beta {
                     v = -self.negamax(d - 1, -beta, -alpha, ply + 1, true);
@@ -673,13 +677,15 @@ let mut best: Option<Move> = None;
                 } else {
                     0
                 };
-                if stand + cap_v + 200 <= alpha {
-                    continue;
-                }
-                if m.captured != NO_PIECE
+                let mut skip = stand + cap_v + 200 <= alpha;
+                if !skip
+                    && m.captured != NO_PIECE
                     && m.promo == NO_PIECE
                     && crate::movegen::see(&self.board, m.to, self.board.side) < 0
                 {
+                    skip = true;
+                }
+                if skip && !self.gives_check(m) {
                     continue;
                 }
             }
@@ -703,6 +709,13 @@ let mut best: Option<Move> = None;
         let major = self.board.pieces[side][QUEEN] | self.board.pieces[side][ROOK];
         let minors = self.board.pieces[side][BISHOP] | self.board.pieces[side][KNIGHT];
         major != 0 || minors.count_ones() >= 2
+    }
+
+    fn gives_check(&mut self, m: Move) -> bool {
+        self.make(m);
+        let c = self.board.in_check(self.board.side);
+        self.unmake(m);
+        c
     }
 
     fn pv_line(&mut self, max: usize) -> Vec<Move> {
