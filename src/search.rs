@@ -806,6 +806,42 @@ fn score_string(score: i32) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn probe_unprobe_round_trip() {
+        for ply in [0usize, 1, 3, 7, 11] {
+            for &s in &[5200, 550, -600, -5120] {
+                assert_eq!(unprobe_score(probe_score(s, ply), ply), s);
+            }
+        }
+    }
+
+    #[test]
+    fn mate_probe_increases_with_ply() {
+        assert_eq!(probe_score(MATE - 100, 5), MATE - 95);
+        assert_eq!(unprobe_score(MATE - 95, 5), MATE - 100);
+        assert_eq!(probe_score(-(MATE - 100), 5), -(MATE - 95));
+        assert_eq!(unprobe_score(-(MATE - 95), 5), -(MATE - 100));
+    }
+
+    #[test]
+    fn score_string_mates_and_cp() {
+        assert_eq!(score_string(MATE - 2), "score mate 1");
+        assert_eq!(score_string(MATE - 4), "score mate 2");
+        assert_eq!(score_string(-(MATE - 4)), "score mate -2");
+        assert_eq!(score_string(123), "score cp 123");
+        assert_eq!(score_string(0), "score cp 0");
+    }
+
+    #[test]
+    fn faster_mate_scores_higher() {
+        assert!(MATE - 2 > MATE - 4, "mate-in-1 must outrank mate-in-2");
+    }
+}
+
 mod connected_to_board {
     use super::*;
 

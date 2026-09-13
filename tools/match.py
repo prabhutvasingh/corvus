@@ -53,6 +53,8 @@ def play_game(path, limit, opening):
             if board.is_game_over():
                 break
             result = eng.play(board, chess.engine.Limit(nodes=limit))
+            if result.move is None:
+                break
             board.push(result.move)
             turn = 'b' if turn == 'w' else 'w'
     except chess.engine.EngineTerminatedError:
