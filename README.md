@@ -1,8 +1,6 @@
 <div align="center">
 
-<picture>
-  <img src="assets/corvus.jpg" alt="Corvus" width="300">
-</picture>
+<img src="assets/corvus.jpg" alt="Corvus" width="200" style="border-radius: 16px">
 
 # Corvus
 
