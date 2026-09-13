@@ -303,6 +303,21 @@ pub fn evaluate(b: &Board) -> i32 {
                 let progress = if c == WHITE { r as i32 } else { 7 - r as i32 };
                 side += 14 + 12 * progress;
                 side += (EG_PASSED + 8 * progress) * p / 24;
+                if b.pieces[c][ROOK] & FILE_MASK[f] != 0 {
+                    let mut behind = false;
+                    let mut rr = b.pieces[c][ROOK] & FILE_MASK[f];
+                    while rr != 0 {
+                        let rsq = rr.trailing_zeros() as usize;
+                        rr &= rr - 1;
+                        let rk = rank_of(rsq) as i32;
+                        if (c == WHITE && rk < r as i32) || (c == BLACK && rk > r as i32) {
+                            behind = true;
+                        }
+                    }
+                    if behind {
+                        side += (25 + 8 * progress) * p / 24;
+                    }
+                }
             }
         }
 
