@@ -107,6 +107,7 @@ const PIN_PEN: [i32; 6] = [10, 35, 30, 45, 60, 0];
 
 const MOB_WEIGHT: [i32; 6] = [0, 4, 4, 3, 2, 0];
 const BISHOP_PAIR: i32 = 32;
+const FORK_BONUS: i32 = 30;
 const DOUBLED_PAWN: i32 = 10;
 const ISOLATED_PAWN: i32 = 14;
 const KING_SHIELD: i32 = 12;
@@ -188,6 +189,11 @@ pub fn evaluate(b: &Board) -> i32 {
         let ering = KING_ATTACKS[b.kingsq[c ^ 1]] | bit(b.kingsq[c ^ 1]);
         let mut attackers = 0;
         let pinned = pinned_mask(b, c);
+        let enemy_mm = b.pieces[c ^ 1][KNIGHT]
+            | b.pieces[c ^ 1][BISHOP]
+            | b.pieces[c ^ 1][ROOK]
+            | b.pieces[c ^ 1][QUEEN]
+            | b.pieces[c ^ 1][KING];
 
         for pc in 0..5 {
             let mut bb = b.pieces[c][pc];
@@ -218,6 +224,19 @@ pub fn evaluate(b: &Board) -> i32 {
                     side += KING_ATK_COV * on_ring.count_ones() as i32;
                     if on_ring != 0 {
                         attackers += 1;
+                    }
+                    let fork_hits = attacks & enemy_mm;
+                    if fork_hits.count_ones() >= 2 {
+                        let mut tot = 0i32;
+                        let mut h = fork_hits;
+                        while h != 0 {
+                            let s2 = h.trailing_zeros() as usize;
+                            h &= h - 1;
+                            tot += PIECE_VALUES[b.piece_on(s2)];
+                        }
+                        if tot > PIECE_VALUES[pc] {
+                            side += FORK_BONUS;
+                        }
                     }
                 }
             }
@@ -315,9 +334,9 @@ pub fn evaluate(b: &Board) -> i32 {
                 }
                 let defended = attacked_by[c] & bit(sq) != 0;
                 pen += if defended {
-                    PIECE_VALUES[pc] / 14
+                    PIECE_VALUES[pc] / 12
                 } else {
-                    PIECE_VALUES[pc] / 4
+                    PIECE_VALUES[pc] / 3
                 };
             }
         }

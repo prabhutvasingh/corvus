@@ -215,7 +215,7 @@ fn attackers_mask(b: &Board, occ: u64, sq: usize, color: usize) -> u64 {
     m
 }
 
-fn see_rec(b: &Board, sq: usize, side: usize, occ: u64, on_sq: i32) -> i32 {
+fn see_rec(b: &Board, sq: usize, side: usize, occ: u64, on_sq: i32, can_pass: bool) -> i32 {
     let atk = attackers_mask(b, occ, sq, side);
     let mut att = None;
     for pc in PAWN..=QUEEN {
@@ -230,9 +230,13 @@ fn see_rec(b: &Board, sq: usize, side: usize, occ: u64, on_sq: i32) -> i32 {
         None => return 0,
     };
     let occ2 = occ & !bit(att_sq);
-    let resp = see_rec(b, sq, side ^ 1, occ2, att_val);
+    let resp = see_rec(b, sq, side ^ 1, occ2, att_val, true);
     let gain = on_sq - resp;
-    gain.max(0)
+    if can_pass {
+        gain.max(0)
+    } else {
+        gain
+    }
 }
 
 pub fn see(b: &Board, sq: usize, stm: usize) -> i32 {
@@ -240,7 +244,7 @@ pub fn see(b: &Board, sq: usize, stm: usize) -> i32 {
         return 0;
     }
     let occ = b.all & !bit(sq);
-    see_rec(b, sq, stm, occ, PIECE_VALUES[b.piece_on(sq)])
+    see_rec(b, sq, stm, occ, PIECE_VALUES[b.piece_on(sq)], false)
 }
 
 #[cfg(test)]
@@ -266,5 +270,26 @@ mod tests {
             moves.iter().any(|m| m.from == 22 && m.to == 29 && m.piece == PAWN),
             "g3xf4 missing from legal moves"
         );
+    }
+
+    #[test]
+    fn see_winning_recapture_is_positive() {
+        let b = Board::from_fen("4k3/8/8/3p4/4n3/5P2/8/4K3 w - - 0 1").unwrap();
+        let se = see(&b, 28, WHITE);
+        assert!(se >= 200 && se <= 400, "pawn recaptures knight: got {}", se);
+    }
+
+    #[test]
+    fn see_equal_trade_is_zero() {
+        let b = Board::from_fen("4k3/8/5n2/8/4n3/2N5/8/4K3 w - - 0 1").unwrap();
+        let se = see(&b, 28, WHITE);
+        assert_eq!(se, 0, "knight for knight: got {}", se);
+    }
+
+    #[test]
+    fn see_losing_capture_is_negative() {
+        let b = Board::from_fen("4k3/8/8/3p4/4n3/8/8/4QK2 w - - 0 1").unwrap();
+        let se = see(&b, 28, WHITE);
+        assert!(se < 0, "queen takes defended knight: got {}", se);
     }
 }
