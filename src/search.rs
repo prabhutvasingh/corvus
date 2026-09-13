@@ -347,10 +347,11 @@ impl Searcher {
             };
         }
 
-        let mut best: Option<Move> = None;
+let mut best: Option<Move> = None;
         let mut score = 0i32;
         let mut last_depth = 0u32;
         let mut depth = 1usize;
+        let mut prev = 0i32;
 
         loop {
             if self.stopped {
@@ -358,11 +359,21 @@ impl Searcher {
             }
             self.iter_reset();
 
-            let (mv, sc) = self.search_root(depth as i32);
+            let (mv, sc) = if depth >= 5 && prev > -900 && prev < 900 {
+                let delta = 50;
+                let (m1, s1) = self.search_root(depth as i32, prev - delta, prev + delta);
+                if self.stopped || (s1 > prev - delta && s1 < prev + delta) {
+                    (m1, s1)
+                } else {
+                    self.search_root(depth as i32, -INF, INF)
+                }
+            } else {
+                self.search_root(depth as i32, -INF, INF)
+            };
             if self.stopped {
                 break;
             }
-
+            prev = sc;
             best = Some(mv);
             score = if self.board.side == BLACK { -sc } else { sc };
             last_depth = depth as u32;
@@ -414,15 +425,14 @@ impl Searcher {
         }
     }
 
-    fn search_root(&mut self, depth: i32) -> (Move, i32) {
+    fn search_root(&mut self, depth: i32, mut alpha: i32, beta: i32) -> (Move, i32) {
         let moves = generate_legal(&mut self.board);
         let tt_mov = self.tt.probe(self.board.key).map(|e| e.0);
         let ordered = self.order_moves(self.board.side, moves, tt_mov, 0);
 
-        let mut alpha = -INF;
-        let beta = INF;
         let mut best = -INF;
         let mut best_move = ordered[0].0;
+        let mut fail_high = false;
 
         let mut first = true;
         for &(m, _) in ordered.iter() {
@@ -452,6 +462,10 @@ impl Searcher {
             if best > alpha {
                 alpha = best;
             }
+            if alpha >= beta {
+                fail_high = true;
+                break;
+            }
         }
         if !self.stopped {
             self.tt.store(
@@ -459,7 +473,7 @@ impl Searcher {
                 best_move.pack(),
                 depth,
                 probe_score(best, 0),
-                TT_BOUND_EXACT,
+                if fail_high { TT_BOUND_LOWER } else { TT_BOUND_EXACT },
             );
         }
         (best_move, best)
