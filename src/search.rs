@@ -333,7 +333,7 @@ impl Searcher {
             }
 
             best = Some(mv);
-            score = sc;
+            score = if self.board.side == BLACK { -sc } else { sc };
             last_depth = depth as u32;
 
             let elapsed = start.elapsed().as_millis() as u64;
