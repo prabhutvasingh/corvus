@@ -276,18 +276,18 @@ impl Searcher {
                         s += 1_000_000;
                     }
                 }
-                if m.captured != NO_PIECE {
-                    s += 10_000 + 10 * PIECE_VALUES[m.captured] - PIECE_VALUES[m.piece];
-                }
                 if m.promo != NO_PIECE {
-                    s += 100_000;
-                }
-                if m.captured == NO_PIECE && m.promo == NO_PIECE {
-                    if self.killers[p][0] == m {
-                        s += 900_000;
-                    } else if self.killers[p][1] == m {
-                        s += 890_000;
+                    s += 950_000;
+                    if m.captured != NO_PIECE {
+                        s += 10 * PIECE_VALUES[m.captured] - PIECE_VALUES[m.piece];
                     }
+                } else if m.captured != NO_PIECE {
+                    s += 10_000 + 10 * PIECE_VALUES[m.captured] - PIECE_VALUES[m.piece];
+                } else if self.killers[p][0] == m {
+                    s += 900_000;
+                } else if self.killers[p][1] == m {
+                    s += 890_000;
+                } else {
                     s += self.history[side][m.from * 64 + m.to] / 2;
                 }
                 (m, s)
@@ -579,7 +579,7 @@ let mut best: Option<Move> = None;
             } else {
                 let mut reduction = 0i32;
                 if quiet && !in_check && d >= 4 && searched >= 4 {
-                    reduction = 1 + (searched as i32 / 6).min(3);
+                    reduction = (1 + (searched as i32 / 4).min(4)).min(4);
                     reduction = reduction.min(d - 1);
                 }
                 v = -self.negamax(d - 1 - reduction, -alpha - 1, -alpha, ply + 1, true);
