@@ -1,5 +1,9 @@
 <div align="center">
 
+<picture>
+  <img src="assets/corvus.jpg" alt="Corvus" width="300">
+</picture>
+
 # Corvus
 
 ### A from-scratch chess engine written in Rust
