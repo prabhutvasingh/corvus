@@ -1,3 +1,4 @@
+use chess_engine::analyze;
 use chess_engine::board::Board;
 use chess_engine::perft;
 use chess_engine::uci;
@@ -37,6 +38,21 @@ fn main() {
                 };
                 let n = perft::perft(&mut b, depth);
                 println!("perft depth {}: {}", depth, n);
+                return;
+            }
+            "analyze" => {
+                let path = args.get(2).cloned().unwrap_or_else(|| {
+                    println!("usage: corvus analyze <file.pgn> [depth]");
+                    std::process::exit(1);
+                });
+                let depth: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(6);
+                match analyze::analyze(&path, depth) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        println!("error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
                 return;
             }
             _ => {}

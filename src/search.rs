@@ -116,6 +116,7 @@ pub struct Searcher {
     pub history: [[i32; 4096]; 2],
     pub nodes: u64,
     pub stopped: bool,
+    pub quiet: bool,
     pub abort: Arc<AtomicBool>,
     pub deadline: Option<Instant>,
     pub nodes_limit: u64,
@@ -133,6 +134,7 @@ impl Searcher {
             history: [[0; 4096]; 2],
             nodes: 0,
             stopped: false,
+            quiet: false,
             abort: Arc::new(AtomicBool::new(false)),
             deadline: None,
             nodes_limit: u64::MAX,
@@ -316,6 +318,19 @@ impl Searcher {
             };
         }
 
+        if let Some(bm) = crate::book::probe(&mut self.board, &root_moves) {
+            let sc = evaluate(&self.board);
+            if !self.quiet {
+                outln(format!("info depth 1 score cp {} pv {}", sc, bm.uci()));
+            }
+            return SearchResult {
+                best: Some(bm),
+                score: if self.board.side == BLACK { -sc } else { sc },
+                nodes: 0,
+                depth: 0,
+            };
+        }
+
         let mut best: Option<Move> = None;
         let mut score = 0i32;
         let mut last_depth = 0u32;
@@ -344,15 +359,17 @@ impl Searcher {
             };
             let pv = self.pv_line(depth);
             let pv_str: Vec<String> = pv.iter().map(|m| m.uci()).collect();
-            outln(format!(
-                "info depth {} {} nodes {} nps {} time {} pv {}",
-                depth,
-                score_string(score),
-                self.nodes,
-                nps,
-                elapsed,
-                pv_str.join(" ")
-            ));
+            if !self.quiet {
+                outln(format!(
+                    "info depth {} {} nodes {} nps {} time {} pv {}",
+                    depth,
+                    score_string(score),
+                    self.nodes,
+                    nps,
+                    elapsed,
+                    pv_str.join(" ")
+                ));
+            }
 
             if depth >= max_depth {
                 break;
