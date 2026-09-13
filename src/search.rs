@@ -523,10 +523,17 @@ let mut best: Option<Move> = None;
             return if in_check { -(MATE - ply as i32) } else { DRAW };
         }
 
+        if !in_check && alpha + 1 == beta && d <= 6 {
+            let stand = evaluate(&self.board);
+            if stand >= beta + 60 + 60 * d && stand < MATE - 500 && stand > -MATE + 500 {
+                return stand;
+            }
+        }
+
         let stm = self.board.side;
         let tt_mov = tt.map(|e| e.0);
+        let n = moves.len();
         let ordered = self.order_moves(stm, moves, tt_mov, ply);
-        let n = ordered.len();
 
         if allow_null && depth >= 3 && !in_check && n >= 2 && self.has_null_material(stm) {
             self.make_null();
