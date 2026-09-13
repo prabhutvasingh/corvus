@@ -404,7 +404,38 @@ pub fn evaluate(b: &Board) -> i32 {
 
     let cd = ((file_of(b.kingsq[0]) as i32 - file_of(b.kingsq[1]) as i32).abs())
             .max((rank_of(b.kingsq[0]) as i32 - rank_of(b.kingsq[1]) as i32).abs());
-        score += (7 - cd) * KING_PROX * p / 24;
+    score += (7 - cd) * KING_PROX * p / 24;
+
+    if b.pieces[0][QUEEN] == 0 && b.pieces[1][QUEEN] == 0 {
+        let color_of_sq = |sq: usize| (file_of(sq) + rank_of(sq)) & 1;
+        let wob = b.pieces[0][BISHOP].count_ones();
+        let bob = b.pieces[1][BISHOP].count_ones();
+        if wob > 0 && bob > 0 {
+            let w_sq_color = color_of_sq(b.pieces[0][BISHOP].trailing_zeros() as usize);
+            let b_sq_color = color_of_sq(b.pieces[1][BISHOP].trailing_zeros() as usize);
+            let mut w_same = true;
+            let mut bb = b.pieces[0][BISHOP];
+            while bb != 0 {
+                let sq = bb.trailing_zeros() as usize;
+                bb &= bb - 1;
+                if color_of_sq(sq) != w_sq_color {
+                    w_same = false;
+                }
+            }
+            let mut b_same = true;
+            let mut bb = b.pieces[1][BISHOP];
+            while bb != 0 {
+                let sq = bb.trailing_zeros() as usize;
+                bb &= bb - 1;
+                if color_of_sq(sq) != b_sq_color {
+                    b_same = false;
+                }
+            }
+            if w_same && b_same && w_sq_color != b_sq_color {
+                score = score * 3 / 4;
+            }
+        }
+    }
 
     if b.side == WHITE {
         score + 12
