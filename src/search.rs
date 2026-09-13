@@ -527,6 +527,8 @@ let mut best: Option<Move> = None;
             return self.quiescence(alpha, beta, ply);
         }
 
+        let dd = if depth >= 3 && tt.is_none() { d - 1 } else { d };
+
         let moves = generate_legal(&mut self.board);
         if moves.is_empty() {
             return if in_check { -(MATE - ply as i32) } else { DRAW };
@@ -593,17 +595,21 @@ let mut best: Option<Move> = None;
             let mut v;
             self.make(m);
             if searched == 0 {
-                v = -self.negamax(d - 1, -beta, -alpha, ply + 1, true);
+                v = -self.negamax(dd - 1, -beta, -alpha, ply + 1, true);
             } else {
-                v = -self.negamax(d - 1 - reduction, -alpha - 1, -alpha, ply + 1, true);
+                v = -self.negamax(dd - 1 - reduction, -alpha - 1, -alpha, ply + 1, true);
                 if v > alpha && v < beta {
-                    v = -self.negamax(d - 1, -beta, -alpha, ply + 1, true);
+                    v = -self.negamax(dd - 1, -beta, -alpha, ply + 1, true);
                 }
             }
             self.unmake(m);
             searched += 1;
             if self.stopped {
                 return 0;
+            }
+            if quiet && v <= alpha0 {
+                let h = &mut self.history[stm][m.from * 64 + m.to];
+                *h = h.saturating_sub(40);
             }
             if v > best {
                 best = v;
