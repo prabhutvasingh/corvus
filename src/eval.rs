@@ -464,6 +464,22 @@ pub fn evaluate(b: &Board) -> i32 {
         score += sign * init.abs().min(9) * p / 24;
     }
 
+    let mut prog = [0i32; 2];
+    for c in 0..2 {
+        let mut bb = b.pieces[c ^ 1][PAWN];
+        while bb != 0 {
+            let sq = bb.trailing_zeros() as usize;
+            bb &= bb - 1;
+            let f = file_of(sq);
+            let r = rank_of(sq);
+            if b.pieces[c][PAWN] & ahead_mask(c ^ 1, r, f) != 0 {
+                continue;
+            }
+            let sign = if c == WHITE { 1 } else { -1 };
+            let def = (4 - king_dist(b.kingsq[c], sq)).max(0) * 18;
+            score += sign * def * p / 24;
+        }
+    }
     for c in 0..2 {
         let mut bb = b.pieces[c][PAWN];
         while bb != 0 {
@@ -474,12 +490,18 @@ pub fn evaluate(b: &Board) -> i32 {
             if b.pieces[c ^ 1][PAWN] & ahead_mask(c, r, f) != 0 {
                 continue;
             }
+            let progress = if c == WHITE { r as i32 } else { 7 - r as i32 };
+            prog[c] = prog[c].max(progress);
             let sign = if c == WHITE { 1 } else { -1 };
             let support = (4 - king_dist(b.kingsq[c], sq)).max(0) * 26;
             let stop = (4 - king_dist(b.kingsq[c ^ 1], sq)).max(0) * 18;
             score += sign * (support - stop) * p / 24;
+            if progress >= 5 {
+                score += sign * 32 * p / 24;
+            }
         }
     }
+    score += (prog[0] - prog[1]) * 22 * p / 24;
 
     let cd = ((file_of(b.kingsq[0]) as i32 - file_of(b.kingsq[1]) as i32).abs())
             .max((rank_of(b.kingsq[0]) as i32 - rank_of(b.kingsq[1]) as i32).abs());
