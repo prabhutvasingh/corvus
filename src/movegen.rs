@@ -1,0 +1,230 @@
+use crate::bitboard::*;
+use crate::board::*;
+
+pub fn generate_legal(b: &mut Board) -> Vec<Move> {
+    let mut moves = Vec::with_capacity(64);
+    let us = b.side;
+    let them = us ^ 1;
+    let own = b.occ[us];
+    let enemy = b.occ[them];
+    let all = b.all;
+
+    let mut kn = b.pieces[us][KNIGHT];
+    while kn != 0 {
+        let sq = kn.trailing_zeros() as usize;
+        kn &= kn - 1;
+        let mut t = KNIGHT_ATTACKS[sq] & !own;
+        while t != 0 {
+            let to = t.trailing_zeros() as usize;
+            t &= t - 1;
+            moves.push(Move::normal(sq, to, KNIGHT, b.piece_on(to)));
+        }
+    }
+
+    let mut bi = b.pieces[us][BISHOP];
+    while bi != 0 {
+        let sq = bi.trailing_zeros() as usize;
+        bi &= bi - 1;
+        let mut t = bishop_attacks(all, sq) & !own;
+        while t != 0 {
+            let to = t.trailing_zeros() as usize;
+            t &= t - 1;
+            moves.push(Move::normal(sq, to, BISHOP, b.piece_on(to)));
+        }
+    }
+
+    let mut ro = b.pieces[us][ROOK];
+    while ro != 0 {
+        let sq = ro.trailing_zeros() as usize;
+        ro &= ro - 1;
+        let mut t = rook_attacks(all, sq) & !own;
+        while t != 0 {
+            let to = t.trailing_zeros() as usize;
+            t &= t - 1;
+            moves.push(Move::normal(sq, to, ROOK, b.piece_on(to)));
+        }
+    }
+
+    let mut qu = b.pieces[us][QUEEN];
+    while qu != 0 {
+        let sq = qu.trailing_zeros() as usize;
+        qu &= qu - 1;
+        let mut t = queen_attacks(all, sq) & !own;
+        while t != 0 {
+            let to = t.trailing_zeros() as usize;
+            t &= t - 1;
+            moves.push(Move::normal(sq, to, QUEEN, b.piece_on(to)));
+        }
+    }
+
+    let mut ki = b.pieces[us][KING];
+    while ki != 0 {
+        let sq = ki.trailing_zeros() as usize;
+        ki &= ki - 1;
+        let mut t = KING_ATTACKS[sq] & !own;
+        while t != 0 {
+            let to = t.trailing_zeros() as usize;
+            t &= t - 1;
+            moves.push(Move::normal(sq, to, KING, b.piece_on(to)));
+        }
+    }
+
+    let mut pw = b.pieces[us][PAWN];
+    while pw != 0 {
+        let sq = pw.trailing_zeros() as usize;
+        pw &= pw - 1;
+        let r = rank_of(sq);
+
+        if us == WHITE {
+            let one = sq + 8;
+            if one < 64 && all & bit(one) == 0 {
+                if r == 6 {
+                    for p in [KNIGHT, BISHOP, ROOK, QUEEN] {
+                        moves.push(Move::promo(sq, one, p));
+                    }
+                } else {
+                    moves.push(Move::normal(sq, one, PAWN, NO_PIECE));
+                    if r == 1 && all & bit(sq + 16) == 0 {
+                        moves.push(Move::normal(sq, sq + 16, PAWN, NO_PIECE));
+                    }
+                }
+            }
+        } else {
+            let one = sq - 8;
+            if all & bit(one) == 0 {
+                if r == 1 {
+                    for p in [KNIGHT, BISHOP, ROOK, QUEEN] {
+                        moves.push(Move::promo(sq, one, p));
+                    }
+                } else {
+                    moves.push(Move::normal(sq, one, PAWN, NO_PIECE));
+                    if r == 6 && all & bit(sq - 16) == 0 {
+                        moves.push(Move::normal(sq, sq - 16, PAWN, NO_PIECE));
+                    }
+                }
+            }
+        }
+
+        let mut atk = PAWN_ATTACKS[us][sq] & enemy;
+        while atk != 0 {
+            let to = atk.trailing_zeros() as usize;
+            atk &= atk - 1;
+            if us == WHITE && rank_of(to) == 7 {
+                for p in [KNIGHT, BISHOP, ROOK, QUEEN] {
+                    moves.push(Move {
+                        from: sq,
+                        to,
+                        piece: PAWN,
+                        captured: PAWN,
+                        promo: p,
+                        flags: M_PROMO,
+                    });
+                }
+            } else if us == BLACK && rank_of(to) == 0 {
+                for p in [KNIGHT, BISHOP, ROOK, QUEEN] {
+                    moves.push(Move {
+                        from: sq,
+                        to,
+                        piece: PAWN,
+                        captured: PAWN,
+                        promo: p,
+                        flags: M_PROMO,
+                    });
+                }
+            } else {
+                moves.push(Move::normal(sq, to, PAWN, b.piece_on(to)));
+            }
+        }
+    }
+
+    if let Some(e) = b.ep {
+        let attackers = PAWN_ATTACKS[us ^ 1][e] & b.pieces[us][PAWN];
+        let mut a = attackers;
+        while a != 0 {
+            let sq = a.trailing_zeros() as usize;
+            a &= a - 1;
+            moves.push(Move::ep(sq, e));
+        }
+    }
+
+    if !b.in_check(us) {
+        if us == WHITE {
+            if b.castle & WK != 0
+                && all & bit(5) == 0
+                && all & bit(6) == 0
+                && b.pieces[us][ROOK] & bit(7) != 0
+                && !b.attacked(them, 5)
+            {
+                moves.push(Move::castle(4, 6));
+            }
+            if b.castle & WQ != 0
+                && all & bit(1) == 0
+                && all & bit(2) == 0
+                && all & bit(3) == 0
+                && b.pieces[us][ROOK] & bit(0) != 0
+                && !b.attacked(them, 3)
+            {
+                moves.push(Move::castle(4, 2));
+            }
+        } else {
+            if b.castle & BK != 0
+                && all & bit(61) == 0
+                && all & bit(62) == 0
+                && b.pieces[us][ROOK] & bit(63) != 0
+                && !b.attacked(them, 61)
+            {
+                moves.push(Move::castle(60, 62));
+            }
+            if b.castle & BQ != 0
+                && all & bit(57) == 0
+                && all & bit(58) == 0
+                && all & bit(59) == 0
+                && b.pieces[us][ROOK] & bit(56) != 0
+                && !b.attacked(them, 59)
+            {
+                moves.push(Move::castle(60, 58));
+            }
+        }
+    }
+
+    moves.retain(|&m| {
+        let legal = b.make(m);
+        b.unmake(m);
+        legal
+    });
+
+    moves
+}
+
+pub fn generate_captures(b: &mut Board) -> Vec<Move> {
+    generate_legal(b)
+        .into_iter()
+        .filter(|m| m.captured != NO_PIECE || m.promo != NO_PIECE)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startpos_move_count() {
+        let mut b = Board::startpos();
+        assert_eq!(generate_legal(&mut b).len(), 20);
+        assert_eq!(crate::perft::perft(&mut b, 1), 20);
+        assert_eq!(crate::perft::perft(&mut b, 2), 400);
+    }
+
+    #[test]
+    fn queen_recapture_generated() {
+        let mut b = Board::from_fen(
+            "rnb1kbnr/pppp1ppp/4p3/8/3P1q2/6P1/PPP2P1P/RNBQKBNR w KQkq - 0 1",
+        )
+        .unwrap();
+        let moves = generate_legal(&mut b);
+        assert!(
+            moves.iter().any(|m| m.from == 22 && m.to == 29 && m.piece == PAWN),
+            "g3xf4 missing from legal moves"
+        );
+    }
+}
