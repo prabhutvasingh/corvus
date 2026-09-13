@@ -552,8 +552,26 @@ let mut best: Option<Move> = None;
         let mut best_move = ordered[0].0;
         let mut searched = 0usize;
 
+        let stand = if !in_check && d <= 3 {
+            Some(evaluate(&self.board))
+        } else {
+            None
+        };
+
         for &(m, _) in ordered.iter() {
             let quiet = m.captured == NO_PIECE && m.promo == NO_PIECE;
+            if quiet && d <= 3 && searched >= 2 {
+                if let Some(st) = stand {
+                    let margin = match d {
+                        1 => 60,
+                        2 => 130,
+                        _ => 180,
+                    };
+                    if st + margin <= alpha {
+                        continue;
+                    }
+                }
+            }
             let mut v;
             self.make(m);
             if searched == 0 {
