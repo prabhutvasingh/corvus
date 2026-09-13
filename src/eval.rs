@@ -123,7 +123,6 @@ const PIN_PEN: [i32; 6] = [10, 35, 30, 45, 60, 0];
 
 const MOB_WEIGHT: [i32; 6] = [0, 4, 4, 3, 2, 0];
 const BISHOP_PAIR: i32 = 32;
-const FORK_BONUS: i32 = 30;
 const DOUBLED_PAWN: i32 = 10;
 const ISOLATED_PAWN: i32 = 14;
 const KING_SHIELD: i32 = 12;
@@ -146,6 +145,12 @@ fn ahead_mask(color: usize, rank: usize, file: usize) -> u64 {
         let lo = bit(8 * rank) - 1;
         adj & lo
     }
+}
+
+fn king_dist(a: usize, b: usize) -> i32 {
+    (file_of(a) as i32 - file_of(b) as i32)
+        .abs()
+        .max((rank_of(a) as i32 - rank_of(b) as i32).abs())
 }
 
 fn pinned_mask(b: &Board, side: usize) -> u64 {
@@ -248,15 +253,24 @@ pub fn evaluate(b: &Board) -> i32 {
                     }
                     let fork_hits = attacks & enemy_mm;
                     if fork_hits.count_ones() >= 2 {
-                        let mut tot = 0i32;
+                        let mut a = 0i32;
+                        let mut bv = 0i32;
                         let mut h = fork_hits;
                         while h != 0 {
                             let s2 = h.trailing_zeros() as usize;
                             h &= h - 1;
-                            tot += PIECE_VALUES[b.piece_on(s2)];
+                            let v = PIECE_VALUES[b.piece_on(s2)];
+                            if v > a {
+                                bv = a;
+                                a = v;
+                            } else if v > bv {
+                                bv = v;
+                            }
                         }
-                        if tot > PIECE_VALUES[pc] {
-                            side += FORK_BONUS;
+                        if bv > 0 {
+                            let bonus = if pc == KNIGHT { 8 + bv / 4 } else { 5 + bv / 6 };
+                            let bonus = bonus.min(a - bv + 25).min(150);
+                            side += bonus;
                         }
                     }
                 }
@@ -409,7 +423,7 @@ pub fn evaluate(b: &Board) -> i32 {
                 pen += if defended {
                     PIECE_VALUES[pc] / 12
                 } else {
-                    PIECE_VALUES[pc] / 3
+                    PIECE_VALUES[pc] / 2
                 };
             }
         }
@@ -419,8 +433,7 @@ pub fn evaluate(b: &Board) -> i32 {
     for c in 0..2 {
         let cover = king_cover[c].count_ones() as i32;
         let force = atk_force[c];
-        let serious = (cover >= 4 && force >= 70) || (cover >= 3 && force >= 120);
-        if !serious {
+        if force < 50 || cover < 2 {
             continue;
         }
         let (kf, kr) = (file_of(b.kingsq[c]), rank_of(b.kingsq[c]));
@@ -434,9 +447,38 @@ pub fn evaluate(b: &Board) -> i32 {
                 }
             }
         }
-        let pen = ((force * cover * (60 - 14 * shield.max(0))) / 12) * p / 24;
+        let shield_f = if shield == 0 { 36 } else { 36 - 8 * shield };
+        let mut pen = (force * cover * shield_f / 12) * p / 24;
+        if shield == 0 {
+            pen = pen * 3 / 2;
+        }
         let pen = pen.min(850);
         score += if c == WHITE { -pen } else { pen };
+    }
+
+    let w_atk = atk_force[0] * king_cover[0].count_ones() as i32;
+    let b_atk = atk_force[1] * king_cover[1].count_ones() as i32;
+    let init = (w_atk - b_atk).clamp(-900, 900) / 110;
+    if init.abs() >= 2 {
+        let sign = if init > 0 { 1 } else { -1 };
+        score += sign * init.abs().min(9) * p / 24;
+    }
+
+    for c in 0..2 {
+        let mut bb = b.pieces[c][PAWN];
+        while bb != 0 {
+            let sq = bb.trailing_zeros() as usize;
+            bb &= bb - 1;
+            let f = file_of(sq);
+            let r = rank_of(sq);
+            if b.pieces[c ^ 1][PAWN] & ahead_mask(c, r, f) != 0 {
+                continue;
+            }
+            let sign = if c == WHITE { 1 } else { -1 };
+            let support = (4 - king_dist(b.kingsq[c], sq)).max(0) * 26;
+            let stop = (4 - king_dist(b.kingsq[c ^ 1], sq)).max(0) * 18;
+            score += sign * (support - stop) * p / 24;
+        }
     }
 
     let cd = ((file_of(b.kingsq[0]) as i32 - file_of(b.kingsq[1]) as i32).abs())
