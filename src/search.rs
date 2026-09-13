@@ -608,6 +608,12 @@ impl Searcher {
                 if stand + cap_v + 200 <= alpha {
                     continue;
                 }
+                if m.captured != NO_PIECE
+                    && m.promo == NO_PIECE
+                    && crate::movegen::see(&self.board, m.to, self.board.side) < 0
+                {
+                    continue;
+                }
             }
             self.make(m);
             let v = -self.quiescence(-beta, -alpha, ply + 1);

@@ -86,8 +86,24 @@ const PST: [[i32; 64]; 6] = [
     PST_PAWN, PST_KNIGHT, PST_BISHOP, PST_ROOK, PST_QUEEN, PST_KING,
 ];
 
+const PST_PAWN_EG: [i32; 64] = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+const PST_EG: [[i32; 64]; 6] = [
+    PST_PAWN_EG, PST_KNIGHT, PST_BISHOP, PST_ROOK, PST_QUEEN, PST_KING_EG,
+];
+
 const EG_PASSED: i32 = 28;
 const KING_PROX: i32 = 10;
+const PIN_PEN: [i32; 6] = [10, 35, 30, 45, 60, 0];
 
 const MOB_WEIGHT: [i32; 6] = [0, 4, 4, 3, 2, 0];
 const BISHOP_PAIR: i32 = 32;
@@ -114,27 +130,73 @@ fn ahead_mask(color: usize, rank: usize, file: usize) -> u64 {
     }
 }
 
+fn pinned_mask(b: &Board, side: usize) -> u64 {
+    let ks = b.kingsq[side];
+    let enemy = side ^ 1;
+    let own = b.occ[side];
+    let occ = b.all;
+    let dia = b.pieces[enemy][BISHOP] | b.pieces[enemy][QUEEN];
+    let orth = b.pieces[enemy][ROOK] | b.pieces[enemy][QUEEN];
+
+    let dirs: [(i32, i32); 8] = [
+        (0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1),
+    ];
+    let mut pinned = 0u64;
+    for (dr, df) in dirs {
+        let diag = dr != 0 && df != 0;
+        let sliders = if diag { dia } else { orth };
+        let mut kr = rank_of(ks) as i32 + dr;
+        let mut kf = file_of(ks) as i32 + df;
+        let mut blocker: Option<usize> = None;
+        while (0..8).contains(&kr) && (0..8).contains(&kf) {
+            let sq = kr as usize * 8 + kf as usize;
+            if own & bit(sq) != 0 {
+                if blocker.is_some() {
+                    break;
+                }
+                blocker = Some(sq);
+            } else if occ & bit(sq) != 0 {
+                if sliders & bit(sq) != 0 {
+                    if let Some(bs) = blocker {
+                        pinned |= bit(bs);
+                    }
+                }
+                break;
+            }
+            kr += dr;
+            kf += df;
+        }
+    }
+    pinned
+}
+
 pub fn evaluate(b: &Board) -> i32 {
     let mut score = 0i32;
 
-    let queens = b.pieces[0][QUEEN] | b.pieces[1][QUEEN];
-    let rooks_all = b.pieces[0][ROOK] | b.pieces[1][ROOK];
-    let eg_active = queens == 0 && rooks_all.count_ones() <= 1;
+    let mut mat_phase = 0i32;
+    for c in 0..2 {
+        mat_phase += 4 * b.pieces[c][QUEEN].count_ones() as i32;
+        mat_phase += 2 * b.pieces[c][ROOK].count_ones() as i32;
+        mat_phase += (b.pieces[c][KNIGHT].count_ones() + b.pieces[c][BISHOP].count_ones()) as i32;
+    }
+    let p = (24 - mat_phase).clamp(0, 24);
+    let mut attacked_by = [0u64; 2];
 
     for c in 0..2 {
         let mut side = 0i32;
         let own = b.occ[c];
-        let mirror = c == BLACK;
         let ering = KING_ATTACKS[b.kingsq[c ^ 1]] | bit(b.kingsq[c ^ 1]);
         let mut attackers = 0;
+        let pinned = pinned_mask(b, c);
 
         for pc in 0..5 {
             let mut bb = b.pieces[c][pc];
             while bb != 0 {
                 let sq = bb.trailing_zeros() as usize;
                 bb &= bb - 1;
-                let mapped = if mirror { sq ^ 56 } else { sq };
-                side += PIECE_VALUES[pc] + PST[pc][mapped];
+                let mapped = if c == BLACK { sq } else { sq ^ 56 };
+                let ps = (PST[pc][mapped] * (24 - p) + PST_EG[pc][mapped] * p) / 24;
+                side += PIECE_VALUES[pc] + ps;
                 if pc == KNIGHT || pc == BISHOP || pc == ROOK || pc == QUEEN {
                     let attacks = match pc {
                         KNIGHT => KNIGHT_ATTACKS[sq],
@@ -142,7 +204,16 @@ pub fn evaluate(b: &Board) -> i32 {
                         ROOK => rook_attacks(b.all, sq),
                         _ => queen_attacks(b.all, sq),
                     };
-                    side += MOB_WEIGHT[pc] * (attacks & !own).count_ones() as i32;
+                    attacked_by[c] |= attacks;
+                    let pin = pinned & bit(sq) != 0;
+                    if pin {
+                        side -= PIN_PEN[pc];
+                    }
+                    let mob = (attacks & !own).count_ones() as i32;
+                    side += MOB_WEIGHT[pc] * if pin { mob / 2 } else { mob };
+                    if pin {
+                        continue;
+                    }
                     let on_ring = attacks & ering;
                     side += KING_ATK_COV * on_ring.count_ones() as i32;
                     if on_ring != 0 {
@@ -151,6 +222,7 @@ pub fn evaluate(b: &Board) -> i32 {
                 }
             }
         }
+        attacked_by[c] |= KING_ATTACKS[b.kingsq[c]];
 
         if attackers >= 3 {
             side += KING_ATK_THREE;
@@ -174,6 +246,7 @@ pub fn evaluate(b: &Board) -> i32 {
         while bb != 0 {
             let sq = bb.trailing_zeros() as usize;
             bb &= bb - 1;
+            attacked_by[c] |= PAWN_ATTACKS[c][sq];
             let f = file_of(sq);
             let r = rank_of(sq);
 
@@ -189,9 +262,7 @@ pub fn evaluate(b: &Board) -> i32 {
             if b.pieces[c ^ 1][PAWN] & ahead_mask(c, r, f) == 0 {
                 let progress = if c == WHITE { r as i32 } else { 7 - r as i32 };
                 side += 14 + 12 * progress;
-                if eg_active {
-                    side += EG_PASSED + 8 * progress;
-                }
+                side += (EG_PASSED + 8 * progress) * p / 24;
             }
         }
 
@@ -226,16 +297,36 @@ pub fn evaluate(b: &Board) -> i32 {
             side -= KING_EXPOSED;
         }
 
-        let mapped = if mirror { ks ^ 56 } else { ks };
-        let king_pst = if eg_active { PST_KING_EG[mapped] } else { PST_KING[mapped] };
+        let mapped = if c == BLACK { ks } else { ks ^ 56 };
+        let king_pst = (PST_KING[mapped] * (24 - p) + PST_KING_EG[mapped] * p) / 24;
         score += if c == WHITE { side + king_pst } else { -(side + king_pst) };
     }
 
-    if eg_active {
-        let cd = ((file_of(b.kingsq[0]) as i32 - file_of(b.kingsq[1]) as i32).abs())
-            .max((rank_of(b.kingsq[0]) as i32 - rank_of(b.kingsq[1]) as i32).abs());
-        score += (7 - cd) * KING_PROX;
+    for c in 0..2 {
+        let their = attacked_by[c ^ 1];
+        let mut pen = 0i32;
+        for pc in PAWN..=QUEEN {
+            let mut bb = b.pieces[c][pc];
+            while bb != 0 {
+                let sq = bb.trailing_zeros() as usize;
+                bb &= bb - 1;
+                if their & bit(sq) == 0 {
+                    continue;
+                }
+                let defended = attacked_by[c] & bit(sq) != 0;
+                pen += if defended {
+                    PIECE_VALUES[pc] / 14
+                } else {
+                    PIECE_VALUES[pc] / 4
+                };
+            }
+        }
+        score += if c == WHITE { -pen } else { pen };
     }
+
+    let cd = ((file_of(b.kingsq[0]) as i32 - file_of(b.kingsq[1]) as i32).abs())
+            .max((rank_of(b.kingsq[0]) as i32 - rank_of(b.kingsq[1]) as i32).abs());
+        score += (7 - cd) * KING_PROX * p / 24;
 
     if b.side == WHITE {
         score + 12

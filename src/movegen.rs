@@ -1,5 +1,6 @@
 use crate::bitboard::*;
 use crate::board::*;
+use crate::eval::PIECE_VALUES;
 
 pub fn generate_legal(b: &mut Board) -> Vec<Move> {
     let mut moves = Vec::with_capacity(64);
@@ -201,6 +202,45 @@ pub fn generate_captures(b: &mut Board) -> Vec<Move> {
         .into_iter()
         .filter(|m| m.captured != NO_PIECE || m.promo != NO_PIECE)
         .collect()
+}
+
+fn attackers_mask(b: &Board, occ: u64, sq: usize, color: usize) -> u64 {
+    let mut m = PAWN_ATTACKS[color ^ 1][sq] & b.pieces[color][PAWN];
+    m |= KNIGHT_ATTACKS[sq] & b.pieces[color][KNIGHT];
+    m |= KING_ATTACKS[sq] & b.pieces[color][KING];
+    let d = bishop_attacks(occ, sq);
+    let o = rook_attacks(occ, sq);
+    m |= d & (b.pieces[color][BISHOP] | b.pieces[color][QUEEN]);
+    m |= o & (b.pieces[color][ROOK] | b.pieces[color][QUEEN]);
+    m
+}
+
+fn see_rec(b: &Board, sq: usize, side: usize, occ: u64, on_sq: i32) -> i32 {
+    let atk = attackers_mask(b, occ, sq, side);
+    let mut att = None;
+    for pc in PAWN..=QUEEN {
+        let p = atk & b.pieces[side][pc] & occ;
+        if p != 0 {
+            att = Some((p.trailing_zeros() as usize, PIECE_VALUES[pc]));
+            break;
+        }
+    }
+    let (att_sq, att_val) = match att {
+        Some(x) => x,
+        None => return 0,
+    };
+    let occ2 = occ & !bit(att_sq);
+    let resp = see_rec(b, sq, side ^ 1, occ2, att_val);
+    let gain = on_sq - resp;
+    gain.max(0)
+}
+
+pub fn see(b: &Board, sq: usize, stm: usize) -> i32 {
+    if b.piece_on(sq) == NO_PIECE {
+        return 0;
+    }
+    let occ = b.all & !bit(sq);
+    see_rec(b, sq, stm, occ, PIECE_VALUES[b.piece_on(sq)])
 }
 
 #[cfg(test)]
