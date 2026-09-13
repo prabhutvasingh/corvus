@@ -359,6 +359,7 @@ let mut best: Option<Move> = None;
             }
             self.iter_reset();
 
+            let prev_best = best;
             let (mv, sc) = if depth >= 5 && prev > -900 && prev < 900 {
                 let mut delta = 26i32;
                 let mut out: Option<(Move, i32)> = None;
@@ -409,6 +410,14 @@ let mut best: Option<Move> = None;
 
             if depth >= max_depth {
                 break;
+            }
+            if let Some(d) = self.deadline {
+                if prev_best == Some(mv) && depth >= 6 {
+                    let total = d.duration_since(start).as_millis() as u64;
+                    if elapsed >= total * 3 / 5 {
+                        break;
+                    }
+                }
             }
             let over_time = self.deadline.map_or(false, |d| Instant::now() >= d);
             if over_time {
