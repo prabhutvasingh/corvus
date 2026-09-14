@@ -430,7 +430,7 @@ let mut best: Option<Move> = None;
                 break;
             }
             if let Some(d) = self.deadline {
-                if prev_best == Some(mv) && depth >= 6 {
+                if prev_best == Some(mv) && depth >= 6 && score.abs() < MATE - 100 {
                     let total = d.duration_since(start).as_millis() as u64;
                     if elapsed >= total * 3 / 5 {
                         break;
@@ -534,6 +534,9 @@ let mut best: Option<Move> = None;
         let key = self.board.key;
 
         let tt = self.tt.probe(key);
+        let mate_ctx = tt.map_or(false, |(_tm, _td, ts, _tb)| {
+            ts.abs() >= MATE - 2 * MAX_PLY as i32
+        });
         if let Some((_tmov, tdepth, tscore, tbound)) = tt {
             if tdepth >= depth && depth > 0 && tscore > -MATE && tscore < MATE {
                 let sc = unprobe_score(tscore, ply);
@@ -593,7 +596,7 @@ let mut best: Option<Move> = None;
 
         let mut se_move: Option<u32> = None;
         let mut se_ext = 0i32;
-        if !in_check && depth >= 8 && ply >= 2 && n >= 2 {
+        if !in_check && depth >= 6 && ply >= 2 && n >= 2 {
             if let Some((tm, td, ts, tb)) = tt {
                 if tm != 0
                     && td >= depth - 3
@@ -647,13 +650,13 @@ let mut best: Option<Move> = None;
                         2 => 130,
                         _ => 180,
                     };
-                    if st + margin <= alpha && !self.gives_check(m) {
+                    if st + margin <= alpha && !self.gives_check(m) && !mate_ctx {
                         continue;
                     }
                 }
             }
             let mut reduction = 0i32;
-            if quiet && !in_check && d >= 5 && searched >= 6 {
+            if quiet && !in_check && d >= 5 && searched >= 6 && !mate_ctx {
                 let p = ply.min(MAX_PLY - 1);
                 let ks = m.from * 64 + m.to;
                 let good = m == self.killers[p][0]
