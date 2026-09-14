@@ -130,6 +130,8 @@ pub struct Searcher {
     pub tt: TT,
     pub killers: [[Move; 2]; MAX_PLY],
     pub history: [[i32; 4096]; 2],
+    pub counter: [[u32; 64]; 2],
+    pub moves_made: Vec<Move>,
     pub nodes: u64,
     pub stopped: bool,
     pub quiet: bool,
@@ -148,6 +150,8 @@ impl Searcher {
             tt: TT::new(20),
             killers: [[Move::normal(0, 0, 0, NO_PIECE); 2]; MAX_PLY],
             history: [[0; 4096]; 2],
+            counter: [[0; 64]; 2],
+            moves_made: Vec::new(),
             nodes: 0,
             stopped: false,
             quiet: false,
@@ -187,9 +191,11 @@ impl Searcher {
         self.board.make(m);
         self.key_stack.push(self.board.key);
         self.irr_boundary.push(irr);
+        self.moves_made.push(m);
     }
 
     fn unmake(&mut self, m: Move) {
+        self.moves_made.pop();
         self.key_stack.pop();
         self.irr_boundary.pop();
         self.board.unmake(m);
@@ -257,6 +263,7 @@ impl Searcher {
         self.key_stack.clear();
         self.irr_boundary.clear();
         self.null_ep.clear();
+        self.moves_made.clear();
     }
 
     fn order_moves(
@@ -265,6 +272,7 @@ impl Searcher {
         moves: Vec<Move>,
         tt_mov: Option<u32>,
         ply: usize,
+        prev_to: Option<usize>,
     ) -> Vec<(Move, i32)> {
         let p = ply.min(MAX_PLY - 1);
         let mut scored: Vec<(Move, i32)> = moves
@@ -276,19 +284,26 @@ impl Searcher {
                         s += 1_000_000;
                     }
                 }
-                if m.promo != NO_PIECE {
-                    s += 950_000;
+                if m.captured != NO_PIECE || m.promo != NO_PIECE {
+                    s += 930_000;
+                    if m.promo != NO_PIECE {
+                        s += 30_000;
+                    }
                     if m.captured != NO_PIECE {
                         s += 10 * PIECE_VALUES[m.captured] - PIECE_VALUES[m.piece];
                     }
-                } else if m.captured != NO_PIECE {
-                    s += 10_000 + 10 * PIECE_VALUES[m.captured] - PIECE_VALUES[m.piece];
                 } else if self.killers[p][0] == m {
-                    s += 900_000;
+                    s += 910_000;
                 } else if self.killers[p][1] == m {
-                    s += 890_000;
+                    s += 905_000;
+                } else if let Some(pt) = prev_to {
+                    if self.counter[side][pt] != 0 && Move::unpack(self.counter[side][pt]) == m {
+                        s += 900_000;
+                    } else {
+                        s += self.history[side][m.from * 64 + m.to] / 4;
+                    }
                 } else {
-                    s += self.history[side][m.from * 64 + m.to] / 2;
+                    s += self.history[side][m.from * 64 + m.to] / 4;
                 }
                 (m, s)
             })
@@ -305,6 +320,9 @@ impl Searcher {
         if self.killers[p][0] != m {
             self.killers[p][1] = self.killers[p][0];
             self.killers[p][0] = m;
+        }
+        if let Some(&pm) = self.moves_made.last() {
+            self.counter[side][pm.to] = m.pack();
         }
         let ks = m.from * 64 + m.to;
         let h = &mut self.history[side][ks];
@@ -446,7 +464,7 @@ let mut best: Option<Move> = None;
     fn search_root(&mut self, depth: i32, mut alpha: i32, beta: i32) -> (Move, i32) {
         let moves = generate_legal(&mut self.board);
         let tt_mov = self.tt.probe(self.board.key).map(|e| e.0);
-        let ordered = self.order_moves(self.board.side, moves, tt_mov, 0);
+        let ordered = self.order_moves(self.board.side, moves, tt_mov, 0, None);
 
         let mut best = -INF;
         let mut best_move = ordered[0].0;
@@ -536,7 +554,7 @@ let mut best: Option<Move> = None;
             return self.quiescence(alpha, beta, ply);
         }
 
-        let dd = if depth >= 3 && tt.is_none() { d - 1 } else { d };
+        let dd = if depth >= 5 && tt.is_none() { d - 1 } else { d };
 
         let moves = generate_legal(&mut self.board);
         if moves.is_empty() {
@@ -553,7 +571,8 @@ let mut best: Option<Move> = None;
         let stm = self.board.side;
         let tt_mov = tt.map(|e| e.0);
         let n = moves.len();
-        let ordered = self.order_moves(stm, moves, tt_mov, ply);
+        let prev_to = self.moves_made.last().map(|m| m.to);
+        let ordered = self.order_moves(stm, moves, tt_mov, ply, prev_to);
 
         if allow_null && depth >= 3 && !in_check && n >= 2 && self.has_null_material(stm) {
             self.make_null();
@@ -571,6 +590,47 @@ let mut best: Option<Move> = None;
         let mut best = -INF;
         let mut best_move = ordered[0].0;
         let mut searched = 0usize;
+
+        let mut se_move: Option<u32> = None;
+        let mut se_ext = 0i32;
+        if !in_check && depth >= 8 && ply >= 2 && n >= 2 {
+            if let Some((tm, td, ts, tb)) = tt {
+                if tm != 0
+                    && td >= depth - 3
+                    && ts > -MATE && ts < MATE
+                    && (tb == TT_BOUND_LOWER || tb == TT_BOUND_EXACT)
+                {
+                    let stand = evaluate(&self.board);
+                    if stand >= beta - 3 {
+                        let margin = 40 + 6 * depth;
+                        let sbeta = ts - margin;
+                        let mut found_other = false;
+                        for &(om, _) in ordered.iter() {
+                            if om.pack() == tm {
+                                continue;
+                            }
+                            self.make(om);
+                            let v = -self.negamax(depth / 2, -sbeta, -sbeta + 1, ply + 1, true);
+                            self.unmake(om);
+                            if self.stopped {
+                                return 0;
+                            }
+                            if v >= sbeta {
+                                found_other = true;
+                                break;
+                            }
+                        }
+                        if !found_other {
+                            se_move = Some(tm);
+                            se_ext = 1;
+                            if ts >= beta + 80 {
+                                se_ext = 2;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let stand = if !in_check && d <= 3 {
             Some(evaluate(&self.board))
@@ -593,22 +653,49 @@ let mut best: Option<Move> = None;
                 }
             }
             let mut reduction = 0i32;
-            if quiet && !in_check && d >= 4 && searched >= 4 {
-                reduction = (1 + (searched as i32 / 4).min(4)).min(4);
-                if self.gives_check(m) {
-                    reduction = 0;
-                } else {
-                    reduction = reduction.min(d - 1);
+            if quiet && !in_check && d >= 5 && searched >= 6 {
+                let p = ply.min(MAX_PLY - 1);
+                let ks = m.from * 64 + m.to;
+                let good = m == self.killers[p][0]
+                    || m == self.killers[p][1]
+                    || self.history[stm][ks] > 1000;
+                if !good {
+                    reduction = ((searched as i32 - 5) / 3).min(3);
+                    if self.gives_check(m) {
+                        reduction = 0;
+                    } else {
+                        reduction = reduction.min(d - 1);
+                    }
                 }
             }
             let mut v;
+            let mut extension = 0i32;
+            if let Some(sm) = se_move {
+                if m.pack() == sm {
+                    extension = se_ext;
+                }
+            }
+            if quiet
+                && !in_check
+                && depth >= 6
+                && ply >= 1
+                && ply < 14
+                && extension == 0
+                && self.gives_check(m)
+            {
+                extension = 1;
+            }
+            let mut fdepth = dd - 1 - reduction + extension;
+            if fdepth < 0 {
+                fdepth = 0;
+            }
             self.make(m);
             if searched == 0 {
-                v = -self.negamax(dd - 1, -beta, -alpha, ply + 1, true);
+                v = -self.negamax(fdepth, -beta, -alpha, ply + 1, true);
             } else {
-                v = -self.negamax(dd - 1 - reduction, -alpha - 1, -alpha, ply + 1, true);
+                v = -self.negamax(fdepth, -alpha - 1, -alpha, ply + 1, true);
                 if v > alpha && v < beta {
-                    v = -self.negamax(dd - 1, -beta, -alpha, ply + 1, true);
+                    v = -self.negamax(dd - 1 + extension, -beta, -alpha, ply + 1, true);
                 }
             }
             self.unmake(m);
@@ -673,17 +760,40 @@ let mut best: Option<Move> = None;
             }
         }
 
-        let captures = if in_check {
-            generate_legal(&mut self.board)
+        let (caps, checks): (Vec<Move>, Vec<Move>) = if in_check {
+            (generate_legal(&mut self.board), Vec::new())
+        } else if ply < 4 {
+            let all = generate_legal(&mut self.board);
+            let mut chks = Vec::new();
+            for &m in all.iter() {
+                if m.captured == NO_PIECE && m.promo == NO_PIECE {
+                    if self.gives_check(m) {
+                        chks.push(m);
+                        if chks.len() == 2 {
+                            break;
+                        }
+                    }
+                }
+            }
+            (
+                all.into_iter()
+                    .filter(|m| m.captured != NO_PIECE || m.promo != NO_PIECE)
+                    .collect(),
+                chks,
+            )
         } else {
-            generate_captures(&mut self.board)
+            (generate_captures(&mut self.board), Vec::new())
         };
-        if captures.is_empty() {
+        if caps.is_empty() && checks.is_empty() {
             return if in_check { -(MATE - ply as i32) } else { alpha };
         }
 
         let tt_mov = self.tt.probe(self.board.key).map(|e| e.0);
-        let ordered = self.order_moves(self.board.side, captures, tt_mov, ply);
+        let mut ordered = self.order_moves(self.board.side, caps, tt_mov, ply, None);
+        let side = self.board.side;
+        for m in checks {
+            ordered.push((m, self.history[side][m.from * 64 + m.to] / 16));
+        }
 
         for &(m, _) in ordered.iter() {
             if !in_check {
