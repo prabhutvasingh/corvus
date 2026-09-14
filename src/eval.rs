@@ -125,6 +125,7 @@ const MOB_WEIGHT: [i32; 6] = [0, 4, 4, 3, 2, 0];
 const BISHOP_PAIR: i32 = 32;
 const DOUBLED_PAWN: i32 = 10;
 const ISOLATED_PAWN: i32 = 14;
+const BACKWARD_PAWN: i32 = 12;
 const KING_SHIELD: i32 = 12;
 const KING_EXPOSED: i32 = 45;
 const ROOK_SEMI_OPEN: i32 = 10;
@@ -332,6 +333,30 @@ pub fn evaluate(b: &Board) -> i32 {
                 side -= ISOLATED_PAWN;
             }
 
+            let protected_by = pawns & PAWN_ATTACKS[c ^ 1][sq] != 0;
+            if pawns & PAWN_ATTACKS[c][sq] != 0 {
+                side += 7;
+            }
+            if protected_by {
+                side += 6;
+            }
+            let front_sq = if c == WHITE {
+                if r == 7 { 64 } else { sq + 8 }
+            } else if r == 0 {
+                64
+            } else {
+                sq - 8
+            };
+            if !protected_by
+                && front_sq < 64
+                && b.pieces[c ^ 1][PAWN] & PAWN_ATTACKS[c][front_sq] != 0
+            {
+                let behind = if c == WHITE { bit(8 * r) - 1 } else { !(bit(8 * (r + 1)) - 1) };
+                if pawns & adj_files & behind == 0 {
+                    side -= BACKWARD_PAWN;
+                }
+            }
+
             if b.pieces[c ^ 1][PAWN] & ahead_mask(c, r, f) == 0 {
                 let progress = if c == WHITE { r as i32 } else { 7 - r as i32 };
                 side += 14 + 12 * progress;
@@ -402,6 +427,14 @@ pub fn evaluate(b: &Board) -> i32 {
         if midgame && kr as i32 != home_rank {
             side -= KING_EXPOSED;
         }
+
+        let enemy_half = if c == WHITE {
+            RANK_MASK[4] | RANK_MASK[5] | RANK_MASK[6]
+        } else {
+            RANK_MASK[1] | RANK_MASK[2] | RANK_MASK[3]
+        };
+        let space_cnt = (attacked_by[c] & enemy_half & !b.pieces[c ^ 1][PAWN]).count_ones() as i32;
+        side += (space_cnt * 2).min(30);
 
         let mapped = if c == BLACK { ks } else { ks ^ 56 };
         let king_pst = (PST_KING[mapped] * (24 - p) + PST_KING_EG[mapped] * p) / 24;
