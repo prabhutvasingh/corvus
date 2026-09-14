@@ -813,8 +813,11 @@ let mut best: Option<Move> = None;
                 {
                     skip = true;
                 }
-                if skip && !self.gives_check(m) {
-                    continue;
+                if skip {
+                    let quiet = m.captured == NO_PIECE && m.promo == NO_PIECE;
+                    if !quiet || !self.gives_check(m) {
+                        continue;
+                    }
                 }
             }
             self.make(m);

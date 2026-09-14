@@ -753,7 +753,9 @@ mod tests {
     #[test]
     fn make_unmake_hash_consistency() {
         let mut b = Board::startpos();
-        let urandom: Vec<u64> = (0..200).map(|i| splitmix(i * 0x9E3779B97F4A7C15)).collect();
+        let urandom: Vec<u64> = (0..200)
+            .map(|i| splitmix((i as u64).wrapping_mul(0x9E3779B97F4A7C15)))
+            .collect();
         for _ in 0..200 {
             let moves = crate::movegen::generate_legal(&mut b);
             if moves.is_empty() {

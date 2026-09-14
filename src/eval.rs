@@ -126,6 +126,11 @@ const BISHOP_PAIR: i32 = 32;
 const DOUBLED_PAWN: i32 = 10;
 const ISOLATED_PAWN: i32 = 14;
 const BACKWARD_PAWN: i32 = 12;
+const ROOK_BATTERY: i32 = 9;
+const QUEEN_ROOK_BATTERY: i32 = 12;
+const BATTERY_HALF_OPEN: i32 = 7;
+const BATTERY_AT_KING: i32 = 10;
+const BISHOP_QUEEN_BATTERY: i32 = 7;
 const KING_SHIELD: i32 = 12;
 const KING_EXPOSED: i32 = 45;
 const ROOK_SEMI_OPEN: i32 = 10;
@@ -207,6 +212,7 @@ pub fn evaluate(b: &Board) -> i32 {
     let mut attacked_by = [0u64; 2];
     let mut king_cover = [0u64; 2];
     let mut atk_force = [0i32; 2];
+    let mut atk_pieces = [0i32; 2];
 
     for c in 0..2 {
         let mut side = 0i32;
@@ -251,6 +257,7 @@ pub fn evaluate(b: &Board) -> i32 {
                         attackers += 1;
                         king_cover[c ^ 1] |= on_ring;
                         atk_force[c ^ 1] += KS_W[pc];
+                        atk_pieces[c ^ 1] += 1;
                     }
                     let fork_hits = attacks & enemy_mm;
                     if fork_hits.count_ones() >= 2 {
@@ -436,9 +443,101 @@ pub fn evaluate(b: &Board) -> i32 {
         let space_cnt = (attacked_by[c] & enemy_half & !b.pieces[c ^ 1][PAWN]).count_ones() as i32;
         side += (space_cnt * 2).min(30);
 
+        let enemy_king_file = file_of(b.kingsq[c ^ 1]) as i32;
+        {
+            let mut pcs = b.pieces[c][ROOK] | b.pieces[c][QUEEN];
+            let mut file_pieces = [0u64; 8];
+            let mut file_cnt = [0u32; 8];
+            while pcs != 0 {
+                let sq = pcs.trailing_zeros() as usize;
+                pcs &= pcs - 1;
+                let f = file_of(sq);
+                file_cnt[f] += 1;
+                file_pieces[f] |= bit(sq);
+            }
+            for f in 0..8 {
+                if file_cnt[f] != 2 {
+                    continue;
+                }
+                let m = file_pieces[f];
+                let sq1 = m.trailing_zeros() as usize;
+                let sq2 = (m ^ bit(sq1)).trailing_zeros() as usize;
+                let (r1, r2) = (
+                    rank_of(sq1).min(rank_of(sq2)),
+                    rank_of(sq1).max(rank_of(sq2)),
+                );
+                let mut clear = true;
+                for r in (r1 + 1)..r2 {
+                    if b.all & bit(r * 8 + f) != 0 {
+                        clear = false;
+                        break;
+                    }
+                }
+                if clear {
+                    let mut bonus = if m & b.pieces[c][QUEEN] != 0 {
+                        QUEEN_ROOK_BATTERY
+                    } else {
+                        ROOK_BATTERY
+                    };
+                    if b.pieces[c ^ 1][PAWN] & FILE_MASK[f] == 0 {
+                        bonus += BATTERY_HALF_OPEN;
+                    }
+                    if (enemy_king_file - f as i32).abs() <= 1 {
+                        bonus += BATTERY_AT_KING;
+                    }
+                    side += bonus;
+                }
+            }
+        }
+        {
+            let mut pcs = b.pieces[c][BISHOP] | b.pieces[c][QUEEN];
+            let mut diag1 = [0u64; 15];
+            let mut diag2 = [0u64; 15];
+            while pcs != 0 {
+                let sq = pcs.trailing_zeros() as usize;
+                pcs &= pcs - 1;
+                let f = file_of(sq);
+                let r = rank_of(sq);
+                diag1[f + r] |= bit(sq);
+                diag2[f + 7 - r] |= bit(sq);
+            }
+            for di in 0..15 {
+                for acc in [&diag1[..], &diag2[..]] {
+                    let m = acc[di];
+                    if m.count_ones() != 2 || m & b.pieces[c][BISHOP] == 0 || m & b.pieces[c][QUEEN] == 0 {
+                        continue;
+                    }
+                    let sq1 = m.trailing_zeros() as usize;
+                    let sq2 = (m ^ bit(sq1)).trailing_zeros() as usize;
+                    let (lo, hi) = if sq1 < sq2 { (sq1, sq2) } else { (sq2, sq1) };
+                    let step = if (hi - lo) % 9 == 0 { 9 } else { 7 };
+                    let mut clear = true;
+                    let mut cur = lo + step;
+                    while cur < hi {
+                        if b.all & bit(cur) != 0 {
+                            clear = false;
+                            break;
+                        }
+                        cur += step;
+                    }
+                    if clear {
+                        let ek = b.kingsq[c ^ 1];
+                        let same_diag =
+                            (file_of(ek) + rank_of(ek) == di) || (file_of(ek) + 7 - rank_of(ek) == di);
+                        let mut bonus = BISHOP_QUEEN_BATTERY;
+                        if same_diag {
+                            bonus += BATTERY_AT_KING;
+                        }
+                        side += bonus;
+                    }
+                }
+            }
+        }
+
         let mapped = if c == BLACK { ks } else { ks ^ 56 };
         let king_pst = (PST_KING[mapped] * (24 - p) + PST_KING_EG[mapped] * p) / 24;
-        score += if c == WHITE { side + king_pst } else { -(side + king_pst) };
+        let contrib = if c == WHITE { side + king_pst } else { -(side + king_pst) };
+        score += contrib;
     }
 
     for c in 0..2 {
@@ -466,7 +565,7 @@ pub fn evaluate(b: &Board) -> i32 {
     for c in 0..2 {
         let cover = king_cover[c].count_ones() as i32;
         let force = atk_force[c];
-        if force < 50 || cover < 2 {
+        if force < 50 || cover < 2 || atk_pieces[c] < 2 {
             continue;
         }
         let (kf, kr) = (file_of(b.kingsq[c]), rank_of(b.kingsq[c]));
